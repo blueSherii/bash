@@ -42,6 +42,9 @@
 #  include <syslog.h>
 #endif
 
+#include <time.h>
+#include <hiredis/hiredis.h>
+
 #include "shell.h"
 #include "flags.h"
 #include "parser.h"
@@ -955,6 +958,52 @@ bash_add_history (char *line)
   using_history ();
 }
 
+static redisContext *bashhist_redis_ctx = NULL;
+
+static void
+save_history_to_redis (const char *line)
+{
+  char hostname[256];
+  const char *username;
+  char key[600];
+  redisReply *reply;
+
+  if (bashhist_redis_ctx == NULL || bashhist_redis_ctx->err)
+    {
+      if (bashhist_redis_ctx)
+        {
+          redisFree (bashhist_redis_ctx);
+          bashhist_redis_ctx = NULL;
+        }
+      bashhist_redis_ctx = redisConnect ("127.0.0.1", 6379);
+      if (bashhist_redis_ctx == NULL || bashhist_redis_ctx->err)
+        {
+          if (bashhist_redis_ctx)
+            {
+              redisFree (bashhist_redis_ctx);
+              bashhist_redis_ctx = NULL;
+            }
+          return;
+        }
+    }
+
+  if (gethostname (hostname, sizeof (hostname)) != 0)
+    strncpy (hostname, "localhost", sizeof (hostname));
+  hostname[sizeof (hostname) - 1] = '\0';
+
+  username = getenv ("USER");
+  if (username == NULL)
+    username = getenv ("LOGNAME");
+  if (username == NULL)
+    username = "unknown";
+
+  snprintf (key, sizeof (key), "%s_%ld_%s", hostname, (long)time (NULL), username);
+
+  reply = redisCommand (bashhist_redis_ctx, "SET %s %s", key, line);
+  if (reply)
+    freeReplyObject (reply);
+}
+
 static void
 really_add_history (char *line)
 {
@@ -962,6 +1011,7 @@ really_add_history (char *line)
   hist_last_line_pushed = 0;
   add_history (line);
   history_lines_this_session++;
+  save_history_to_redis (line);
 }
 
 int

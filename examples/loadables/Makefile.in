@@ -104,7 +104,7 @@ ALLPROG = print truefalse sleep finfo logname basename dirname fdflags \
 	  tty pathchk tee head mkdir rmdir mkfifo mktemp printenv id whoami \
 	  uname sync push ln unlink realpath strftime mypid setpgid seq rm \
 	  accept csv dsv cut stat getconf kv strptime chmod fltexpr
-OTHERPROG = necho hello cat pushd asort
+OTHERPROG = necho hello cat pushd asort redis
 
 SUBDIRS = perl
 
@@ -255,6 +255,9 @@ asort:	asort.o
 
 fltexpr:	fltexpr.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ fltexpr.o $(SHOBJ_LIBS) -lm
+
+redis:	redis.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ redis.o -lhiredis $(SHOBJ_LIBS)
 
 
 # pushd is a special case.  We use the same source that the builtin version
