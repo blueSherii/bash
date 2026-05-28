@@ -967,7 +967,7 @@ save_history_to_redis (const char *line)
   const char *username;
   char key[600];
   redisReply *reply;
-
+  
   if (bashhist_redis_ctx == NULL || bashhist_redis_ctx->err)
     {
       if (bashhist_redis_ctx)
@@ -986,20 +986,26 @@ save_history_to_redis (const char *line)
           return;
         }
     }
-
+  
   if (gethostname (hostname, sizeof (hostname)) != 0)
     strncpy (hostname, "localhost", sizeof (hostname));
   hostname[sizeof (hostname) - 1] = '\0';
-
+  
   username = getenv ("USER");
   if (username == NULL)
     username = getenv ("LOGNAME");
   if (username == NULL)
     username = "unknown";
-
-  snprintf (key, sizeof (key), "%s_%ld_%s", hostname, (long)time (NULL), username);
-
-  reply = redisCommand (bashhist_redis_ctx, "SET %s %s", key, line);
+  
+  /* Use hostname:username:pid as key, with hashes containing unixdate:command */
+  snprintf (key, sizeof (key), "%s:%s:%ld", hostname, username, (long)getpid());
+  
+  /* Create hash with unixdate field and push to list */
+  time_t unix_date = time (NULL);
+  char field_value[1024];
+  snprintf (field_value, sizeof (field_value), "%ld:%s", (long)unix_date, line);
+  
+  reply = redisCommand (bashhist_redis_ctx, "LPUSH %s %s", key, field_value);
   if (reply)
     freeReplyObject (reply);
 }
