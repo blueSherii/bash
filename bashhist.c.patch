@@ -1,0 +1,124 @@
+*** bashhist.c.orig	2024-01-01 00:00:00.000000000 +0000
+*** bashhist.c	2024-01-01 00:00:00.000000000 +0000
+--- bashhist.c.orig
++++ bashhist.c
+@@ -68,9 +68,12 @@ extern int rl_done, rl_dispatching;	/*
+ 
+ #ifndef HISTSIZE_DEFAULT
+ #  define HISTSIZE_DEFAULT "500"
++#endif
++#ifndef CONFIG_FILE
++#  define CONFIG_FILE "/etc/bash.cfg"
+ #endif
+ 
+ #if !defined (errno)
+ extern int errno;
+ #endif
+
+@@ -76,6 +79,12 @@ extern int rl_done, rl_dispatching;	/*
+ static int histignore_item_func (struct ign *);
+ static int check_history_control (char *);
+ static void hc_erasedups (char *);
+ static void really_add_history (char *);
+
++/* Global Redis configuration */
++static char g_redis_hostname[MAXHOSTNAMELEN] = "127.0.0.1";
++static int g_redis_port = 6379;
++static int g_config_loaded = 0;
++
+ static struct ignorevar histignore =
+ {
+   "HISTIGNORE",
+
+@@ -973,6 +983,48 @@ bash_syslog_history (const char *line)
+ }
+ #endif
+	
+ static redisContext *bashhist_redis_ctx = NULL;
+
++/* Load configuration from YAML file */
++static void
++bashhist_load_config (void)
++{
++  FILE *cf = fopen (CONFIG_FILE, "r");
++  int port = g_redis_port;
++  char hostname[MAXHOSTNAMELEN];
++  char *line = NULL;
++  
++  if (!cf || g_config_loaded)
++    {
++      if (cf) fclose (cf);
++      return;
++    }
++  
++  while ((line = fgets (line, sizeof (line), cf)))
++    {
++      /* Parse hostname: */
++      char *hline = strstr (line, "hostname:");
++      /* Parse redis_port: or port: */
++      char *pline = strstr (line, "redis_port:") ? strstr (line, "redis_port:") : strstr (line, "port:");
++      
++      /* Parse hostname if not set */
++      if (hline && !g_redis_hostname[0])
++        {
++          char *p = hline + strlen ("hostname:");
++          /* Skip any spaces/tabs */
++          while (*p == ' ' || *p == '\t') p++;
++          char *q;
++          q = strchr (p, ':');
++          if (!q) q = strchr (p, '"');
++          if (!q) q = strchr (p, '\'');
++          if (!q) q = strchr (p, '\n');
++          if (q)
++            {
++              *q = '\0';
++              strncpy (g_redis_hostname, p, 255);
++              g_redis_hostname [255] = '\0';
++            }
++        }
++      if (pline)
++        {
++          char start = pline - line + 11;
++          if (start > 0)
++            {
++              char *p = line + start;
++              char *q = strchr (p, ':');
++              char *r = strchr (p, '"');
++              char *s = strchr (p, '\n');
++              char *q_ptr = q ? q : (r ? r : s);
++              if (q_ptr)
++                {
++                  *q_ptr = '\0';
++                  int new_port = atoi (pline);
++                  if (new_port > 0 && new_port < 65536)
++                    port = new_port;
++                }
++            }
++        }
++    }
++  
++  fclose (cf);
++  g_redis_port = port;
++  g_config_loaded = 1;
++}
++
+ static void
+ save_history_to_redis (const char *line)
+ {
+@@ -989,8 +1041,12 @@ save_history_to_redis (const char *line)
+   if (bashhist_redis_ctx == NULL || bashhist_redis_ctx->err)
+     {
+       if (bashhist_redis_ctx)
+@@ -998,7 +1054,12 @@ save_history_to_redis (const char *line)
+       bashhist_redis_ctx = redisConnect ("127.0.0.1", 6379);
+       if (bashhist_redis_ctx == NULL || bashhist_redis_ctx->err)
+@@ -1006,7 +1068,14 @@ save_history_to_redis (const char *line)
+   
+   if (gethostname (hostname, sizeof (hostname)) != 0)
+     strncpy (hostname, "localhost", sizeof (hostname));
+-  hostname[sizeof (hostname) - 1] = '\0';
++  hostname[sizeof (hostname) - 1] = '\0';
+  
+   username = getenv ("USER");
+
+ 

@@ -1,0 +1,80 @@
+/* bashhist.c with support for config file at /etc/bash.cfg */
+/* 
+ * This version reads Redis hostname and port from a YAML config file.
+ * Falls back to defaults if config file doesn't exist.
+ * 
+ * Config file format:
+ * bash_history_redis:
+ *   hostname: 192.168.122.10
+ *   port: 6379
+ */
+
+/* Line ~70 */
+#ifndef CONFIG_FILE
+#define CONFIG_FILE "/etc/bash.cfg"
+#endif
+
+/* Line ~82 */
+/* Global Redis configuration */
+static char g_redis_hostname[MAXHOSTNAMELEN] = "127.0.0.1";
+static int g_redis_port = 6379;
+static int g_config_loaded = 0;
+
+/* Line ~1070, before last_history_entry definition */
+/* Load configuration from config file */
+static void
+bashhist_load_config (void)
+{
+  FILE *cf = fopen (CONFIG_FILE, "r");
+  int port = g_redis_port;
+  char line[512];
+  char *p;
+  
+  if (!cf || g_config_loaded)
+    {
+      if (cf) fclose (cf);
+      return;
+    }
+  
+  while ((p = fgets (line, sizeof (line), cf)) != NULL)
+    {
+      /* Parse redis_port */
+      char *pline = strstr (line, "redis_port:");
+      if (pline)
+        {
+          char *start = pline + 11;
+          char *q = strchr (start, '"');
+          if (q)
+            {
+              *q = '\0';
+              port = atoi (start);
+            }
+        }
+      
+      /* Parse hostname */
+      if (g_redis_hostname[0] == 0)
+        {
+          p = strstr (line, "hostname:");
+          if (p)
+            {
+              char *start = p + 9;
+              char *q = strchr (start, '"');
+              if (q)
+                {
+                  *q = '\0';
+                  strncpy (g_redis_hostname, start, 255);
+                }
+            }
+        }
+    }
+  
+  fclose (cf);
+  g_redis_port = port;
+  g_config_loaded = 1;
+}
+
+/* Line ~969, in save_history_to_redis */
+/* Before redisConnect call */
+bashhist_load_config ();
+
+/* Use g_redis_hostname and g_redis_port instead of hardcoded values */

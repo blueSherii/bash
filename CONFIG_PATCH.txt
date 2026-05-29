@@ -1,0 +1,83 @@
+/* Modified bashhist.c with config file support */
+
+/* Replace the CONFIG_FILE macro and related config code */
+# Line 68 after HISTSIZE_DEFAULT: add:
+# -endif
+# -ifndef CONFIG_FILE
+#   define CONFIG_FILE "/etc/bash.cfg"
+# -endif
+# -if !defined (errno)
+# extern int errno;
+# -endif
+
+# Line 81 after extern int errno: add:
+# -endif
+# -static int histignore_item_func (struct ign *);
+
+/* Add these static declarations after line 86: */
+# static char g_redis_hostname[MAXHOSTNAMELEN] = DEFAULT_REDIS_HOST;
+# static int g_redis_port = DEFAULT_REDIS_PORT;
+# static int g_config_loaded = 0;
+
+/* Add this function after line 1071 (before last_history_entry): */
+# static void
+# bashhist_load_config (void)
+# {
+#   FILE *cf = fopen (CONFIG_FILE, "r");
+#   int port = g_redis_port;
+#   
+#   if (!cf || g_config_loaded)
+#     {
+#       if (cf) fclose (cf);
+#       return;
+#     }
+#   
+#   char line[512];
+#   char *p;
+#   
+#   while ((p = fgets (line, sizeof (line), cf)) != NULL)
+#     {
+#       /* Parse redis_port field */
+#       char *pline = strstr (line, "redis_port:");
+#       if (pline)
+#         {
+#           char *start = pline + 11; /* skip "redis_port:" */
+#           char *end = strchr (start, ':');
+#           char *q = strchr (start, '"');
+#           char *s = strchr (start, '\'');
+#           char *n = strchr (start, '\n');
+#           
+#           if (q)
+#             {
+#               *q = '\0';
+#               port = atoi (start);
+#             }
+#           else if (end)
+#             port = atoi (start);
+#         }
+#       
+#       /* Parse hostname field */
+#       if (g_redis_hostname[0] == 0)
+#         {
+#           p = strstr (line, "hostname:");
+#           if (p)
+#             {
+#               char *start = p + strlen ("hostname:");
+#               char *q = strchr (start, '"');
+#               if (q)
+#                 {
+#                   *q = '\0';
+#                   strncpy (g_redis_hostname, start, 255);
+#                 }
+#             }
+#         }
+#       }
+#     
+#     fclose (cf);
+#     g_redis_port = port;
+#     g_config_loaded = 1;
+#   }
+# }
+
+# Line 969 after "static redisContext *bashhist_redis_ctx = NULL;": add:
+# bashhist_load_config ();
